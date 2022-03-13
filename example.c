@@ -1,4 +1,3 @@
-```C
 #include "dynamic.h"
 
 var count(var words){
@@ -63,4 +62,3 @@ int main(){
 
     return 0;
 }
-```
