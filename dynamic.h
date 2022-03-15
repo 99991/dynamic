@@ -102,10 +102,12 @@ struct Object {
 
     // Object-specific struct members below.
 
-    // Those 4 values could be in a union, but unnamed unions are not C99.
+    // These values could be in a union, but unnamed unions are not C99.
     char *string;
     var *objects;
     num_type value;
+    double dvalue;
+    bool bvalue;
     MapItem *items;
 
     size_t start;
@@ -142,6 +144,10 @@ var rstrip(var string);
 var strip(var string);
 var lpad(var string, size_t length, char c);
 var rpad(var string, size_t length, char c);
+var push_char(var string, char c);
+var push_char_front(var string, char c);
+char pop_char(var string);
+char pop_char_front(var string);
 
 // Object to string functions
 
@@ -150,10 +156,20 @@ var obj_num_str(var object);
 var obj_str_str(var object);
 var obj_arr_str(var object);
 var obj_map_str(var object);
+var obj_dbl_str(var object);
+var obj_bool_str(var object);
 
 // Num functions
 
 var num(num_type value);
+
+// Double functions
+
+var dbl(double value);
+
+// Boolean functions
+
+var obj_bool(bool value);
 
 // Array functions
 
@@ -195,6 +211,8 @@ int obj_str_cmp(var object1, var object2);
 int obj_num_cmp(var object1, var object2);
 int obj_arr_cmp(var object1, var object2);
 int obj_map_cmp(var object1, var object2);
+int obj_dbl_cmp(var object1, var object2);
+int obj_bool_cmp(var object1, var object2);
 
 // Hashing
 
@@ -203,6 +221,8 @@ size_t obj_num_hash(var object);
 size_t obj_str_hash(var object);
 size_t obj_arr_hash(var object);
 size_t obj_map_hash(var object);
+size_t obj_dbl_hash(var object);
+size_t obj_bool_hash(var object);
 
 // Type checking
 
@@ -210,6 +230,8 @@ bool obj_is_str(var object);
 bool obj_is_num(var object);
 bool obj_is_arr(var object);
 bool obj_is_map(var object);
+bool obj_is_dbl(var object);
+bool obj_is_bool(var object);
 
 // JSON
 
@@ -217,8 +239,14 @@ void obj_num_json(var object, var output, size_t indentation);
 void obj_str_json(var object, var output, size_t indentation);
 void obj_map_json(var object, var output, size_t indentation);
 void obj_arr_json(var object, var output, size_t indentation);
+void obj_dbl_json(var object, var output, size_t indentation);
+void obj_bool_json(var object, var output, size_t indentation);
 void obj_json(var object, var output, size_t indentation);
 var json(var object);
+var parse_str(var string);
+var parse_cstr(const char *string);
+var parse_cstr_length(const char *string, size_t length);
+var parse(void *ptr);
 
 // GC
 

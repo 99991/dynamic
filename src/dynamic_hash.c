@@ -5,11 +5,25 @@ size_t hash(var object){
 }
 
 size_t obj_num_hash(var object){
-    return (size_t)object->value;
+    num_type v = object->dvalue;
+    size_t h = 0;
+    memcpy(&h, &v, sizeof(h) < sizeof(v) ? sizeof(h) : sizeof(v));
+    return h;
+}
+
+size_t obj_dbl_hash(var object){
+    double v = object->dvalue;
+    size_t h = 0;
+    memcpy(&h, &v, sizeof(h) < sizeof(v) ? sizeof(h) : sizeof(v));
+    return h;
+}
+
+size_t obj_bool_hash(var object){
+    return object->bvalue ? 1 : 0;
 }
 
 size_t obj_str_hash(var object){
-    const char *string = object->string;
+    const char *string = obj_cstr(object);
     size_t length = object->length;
 
     // This would be the fnv1a32 hash if size_t was 32 bit.

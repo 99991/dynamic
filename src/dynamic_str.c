@@ -19,14 +19,19 @@ var to_str(var object){
 }
 
 char* obj_cstr(var object){
-    return object ? object->string : NULL;
+    return object ? object->string + object->start : NULL;
 }
 
 var obj_num_str(var object){
-    char buf[256];
-    int length = snprintf(buf, sizeof(buf), "%zd", object->value);
-    if (length < 0) return NULL;
-    return obj_str_from_length(buf, (size_t)length);
+    return json(object);
+}
+
+var obj_dbl_str(var object){
+    return json(object);
+}
+
+var obj_bool_str(var object){
+    return json(object);
 }
 
 var obj_str_str(var object){
@@ -43,8 +48,10 @@ var obj_map_str(var object){
 
 var obj_str_take_ownership(char *string, size_t length){
     var object = obj_new(&str_type_info);
+    object->start = 0;
     object->string = string;
     object->length = length;
+    object->capacity = length;
     return object;
 }
 
@@ -81,11 +88,11 @@ var join(var array, var separator){
     for (size_t i = 0; i < length; i++){
         var string = arr_at(array, i);
 
-        memcpy(ptr, string->string, string->length);
+        memcpy(ptr, obj_cstr(string), string->length);
         ptr += string->length;
 
         if (i != length - 1){
-            memcpy(ptr, separator->string, separator->length);
+            memcpy(ptr, obj_cstr(separator), separator->length);
             ptr += separator->length;
         }
     }
@@ -102,7 +109,7 @@ var substr(var string, size_t i, size_t j){
 
     if (i >= j) return str("");
 
-    return  obj_str_from_length(string->string + i, j - i);
+    return  obj_str_from_length(obj_cstr(string) + i, j - i);
 }
 
 size_t find(var haystack, var needle, size_t offset){
@@ -112,7 +119,7 @@ size_t find(var haystack, var needle, size_t offset){
     if (haystack->length < needle->length) return NPOS;
 
     for (size_t i = offset; i <= haystack->length - needle->length; i++){
-        if (0 == memcmp(haystack->string + i, needle->string, needle->length)){
+        if (0 == memcmp(obj_cstr(haystack) + i, obj_cstr(needle), needle->length)){
             return i;
         }
     }
@@ -160,21 +167,21 @@ var repeat(var object, size_t count){
 
 var lstrip(var string){
     size_t i = 0;
-    while (i < string->length && is_space(string->string[i])) i++;
+    while (i < string->length && is_space(obj_cstr(string)[i])) i++;
     return substr(string, i, string->length);
 }
 
 var rstrip(var string){
     size_t j = string->length;
-    while (j > 0 && is_space(string->string[j - 1])) j++;
+    while (j > 0 && is_space(obj_cstr(string)[j - 1])) j++;
     return substr(string, 0, j);
 }
 
 var strip(var string){
     size_t i = 0;
-    while (i < string->length && is_space(string->string[i])) i++;
+    while (i < string->length && is_space(obj_cstr(string)[i])) i++;
     size_t j = string->length;
-    while (j > 0 && is_space(string->string[j - 1])) j++;
+    while (j > 0 && is_space(obj_cstr(string)[j - 1])) j++;
     return substr(string, i, j);
 }
 
@@ -188,4 +195,72 @@ var rpad(var string, size_t length, char c){
     if (string->length >= length) return string;
 
     return cat(string, repeat_char(c, length - string->length));
+}
+
+var obj_str_reserve(var string, size_t start, size_t capacity){
+    if (string->capacity < capacity){
+        assert(start + string->length <= capacity);
+
+        // TODO check overflow
+        char *new_string = malloc(capacity + 1);
+        memcpy(new_string + start, obj_cstr(string), string->length);
+        new_string[start + string->length] = '\0';
+
+        free(string->string);
+
+        string->start = start;
+        string->string = new_string;
+        string->capacity = capacity;
+    }
+    return string;
+}
+
+var push_char(var string, char c){
+    assert(obj_is_str(string));
+
+    if (string->length >= string->capacity){
+        // TODO check overflow
+        if (!obj_str_reserve(string, string->start, string->length * 3u / 2u + 1u)){
+            return NULL;
+        }
+    }
+
+    obj_cstr(string)[string->length] = c;
+    string->length++;
+    obj_cstr(string)[string->length] = '\0';
+
+    return string;
+}
+
+var push_char_front(var string, char c){
+    assert(obj_is_str(string));
+
+    if (string->start == 0){
+        size_t new_capacity = string->capacity * 3u / 2u + 1u;
+        size_t new_start = new_capacity - string->capacity;
+
+        if (!obj_str_reserve(string, new_start, new_capacity)){
+            return NULL;
+        }
+    }
+
+    string->start--;
+    string->length++;
+    obj_cstr(string)[0] = c;
+
+    return string;
+}
+
+char pop_char(var string){
+    assert(obj_is_str(string));
+    assert(string->length > 0);
+
+    char c = obj_cstr(string)[--string->length];
+    obj_cstr(string)[string->length] = '\0';
+    return c;
+}
+
+char pop_char_front(var string){
+    string->length--;
+    return obj_cstr(string)[string->start++];
 }

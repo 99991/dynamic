@@ -38,7 +38,7 @@ void obj_arr_free(Object *object){
 
 var obj_arr_reserve(var array, size_t start, size_t capacity){
     if (array->capacity < capacity){
-        assert(start + array->length < capacity);
+        assert(start + array->length <= capacity);
 
         // TODO check overflow
         var *objects = malloc(sizeof(*objects) * capacity);

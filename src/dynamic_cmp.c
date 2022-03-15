@@ -56,12 +56,24 @@ int cmp_natural(const char *a, const char *b){
 }
 
 int obj_str_cmp(var object1, var object2){
-    return cmp_natural(object1->string, object2->string);
+    return cmp_natural(obj_cstr(object1), obj_cstr(object2));
 }
 
 int obj_num_cmp(var object1, var object2){
     if (object1->value < object2->value) return -1;
     if (object1->value > object2->value) return +1;
+    return 0;
+}
+
+int obj_dbl_cmp(var object1, var object2){
+    if (object1->dvalue < object2->dvalue) return -1;
+    if (object1->dvalue > object2->dvalue) return +1;
+    return 0;
+}
+
+int obj_bool_cmp(var object1, var object2){
+    if (object1->bvalue < object2->bvalue) return -1;
+    if (object1->bvalue > object2->bvalue) return +1;
     return 0;
 }
 

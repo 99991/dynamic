@@ -2,7 +2,7 @@
 
 var read_file(var path){
     assert(obj_is_str(path));
-    FILE *f = fopen(path->string, "rb");
+    FILE *f = fopen(obj_cstr(path), "rb");
     if (!f) return NULL;
     fseek(f, 0, SEEK_END);
     long llength = ftell(f);
@@ -30,9 +30,9 @@ var read_file(var path){
 bool write_file(var path, var data){
     assert(obj_is_str(path));
     assert(obj_is_str(data));
-    FILE *f = fopen(path->string, "wb");
+    FILE *f = fopen(obj_cstr(path), "wb");
     if (!f) return false;
-    if (data->length != fwrite(data->string, 1, data->length, f)){
+    if (data->length != fwrite(obj_cstr(data), 1, data->length, f)){
         fclose(f);
         return false;
     }

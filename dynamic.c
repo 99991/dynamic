@@ -1,5 +1,49 @@
 #include "dynamic.h"
 
+TypeInfo dbl_type_info = {
+    "num",
+    NULL,
+    NULL,
+    obj_dbl_cmp,
+    obj_dbl_str,
+    obj_dbl_json,
+    obj_dbl_hash,
+};
+
+bool obj_is_dbl(var object){
+    return object && object->type_info == &dbl_type_info;
+}
+
+var dbl(double value){
+    var object = obj_new(&dbl_type_info);
+    object->dvalue = value;
+    return object;
+}
+
+#include "dynamic.h"
+
+TypeInfo bool_type_info = {
+    "num",
+    NULL,
+    NULL,
+    obj_bool_cmp,
+    obj_bool_str,
+    obj_bool_json,
+    obj_bool_hash,
+};
+
+bool obj_is_bool(var object){
+    return object && object->type_info == &bool_type_info;
+}
+
+var obj_bool(bool value){
+    var object = obj_new(&dbl_type_info);
+    object->bvalue = value;
+    return object;
+}
+
+#include "dynamic.h"
+
 TypeInfo str_type_info = {
     "str",
     obj_str_free,
@@ -19,14 +63,19 @@ var to_str(var object){
 }
 
 char* obj_cstr(var object){
-    return object ? object->string : NULL;
+    return object ? object->string + object->start : NULL;
 }
 
 var obj_num_str(var object){
-    char buf[256];
-    int length = snprintf(buf, sizeof(buf), "%zd", object->value);
-    if (length < 0) return NULL;
-    return obj_str_from_length(buf, (size_t)length);
+    return json(object);
+}
+
+var obj_dbl_str(var object){
+    return json(object);
+}
+
+var obj_bool_str(var object){
+    return json(object);
 }
 
 var obj_str_str(var object){
@@ -43,8 +92,10 @@ var obj_map_str(var object){
 
 var obj_str_take_ownership(char *string, size_t length){
     var object = obj_new(&str_type_info);
+    object->start = 0;
     object->string = string;
     object->length = length;
+    object->capacity = length;
     return object;
 }
 
@@ -81,11 +132,11 @@ var join(var array, var separator){
     for (size_t i = 0; i < length; i++){
         var string = arr_at(array, i);
 
-        memcpy(ptr, string->string, string->length);
+        memcpy(ptr, obj_cstr(string), string->length);
         ptr += string->length;
 
         if (i != length - 1){
-            memcpy(ptr, separator->string, separator->length);
+            memcpy(ptr, obj_cstr(separator), separator->length);
             ptr += separator->length;
         }
     }
@@ -102,7 +153,7 @@ var substr(var string, size_t i, size_t j){
 
     if (i >= j) return str("");
 
-    return  obj_str_from_length(string->string + i, j - i);
+    return  obj_str_from_length(obj_cstr(string) + i, j - i);
 }
 
 size_t find(var haystack, var needle, size_t offset){
@@ -112,7 +163,7 @@ size_t find(var haystack, var needle, size_t offset){
     if (haystack->length < needle->length) return NPOS;
 
     for (size_t i = offset; i <= haystack->length - needle->length; i++){
-        if (0 == memcmp(haystack->string + i, needle->string, needle->length)){
+        if (0 == memcmp(obj_cstr(haystack) + i, obj_cstr(needle), needle->length)){
             return i;
         }
     }
@@ -160,21 +211,21 @@ var repeat(var object, size_t count){
 
 var lstrip(var string){
     size_t i = 0;
-    while (i < string->length && is_space(string->string[i])) i++;
+    while (i < string->length && is_space(obj_cstr(string)[i])) i++;
     return substr(string, i, string->length);
 }
 
 var rstrip(var string){
     size_t j = string->length;
-    while (j > 0 && is_space(string->string[j - 1])) j++;
+    while (j > 0 && is_space(obj_cstr(string)[j - 1])) j++;
     return substr(string, 0, j);
 }
 
 var strip(var string){
     size_t i = 0;
-    while (i < string->length && is_space(string->string[i])) i++;
+    while (i < string->length && is_space(obj_cstr(string)[i])) i++;
     size_t j = string->length;
-    while (j > 0 && is_space(string->string[j - 1])) j++;
+    while (j > 0 && is_space(obj_cstr(string)[j - 1])) j++;
     return substr(string, i, j);
 }
 
@@ -188,6 +239,74 @@ var rpad(var string, size_t length, char c){
     if (string->length >= length) return string;
 
     return cat(string, repeat_char(c, length - string->length));
+}
+
+var obj_str_reserve(var string, size_t start, size_t capacity){
+    if (string->capacity < capacity){
+        assert(start + string->length <= capacity);
+
+        // TODO check overflow
+        char *new_string = malloc(capacity + 1);
+        memcpy(new_string + start, obj_cstr(string), string->length);
+        new_string[start + string->length] = '\0';
+
+        free(string->string);
+
+        string->start = start;
+        string->string = new_string;
+        string->capacity = capacity;
+    }
+    return string;
+}
+
+var push_char(var string, char c){
+    assert(obj_is_str(string));
+
+    if (string->length >= string->capacity){
+        // TODO check overflow
+        if (!obj_str_reserve(string, string->start, string->length * 3u / 2u + 1u)){
+            return NULL;
+        }
+    }
+
+    obj_cstr(string)[string->length] = c;
+    string->length++;
+    obj_cstr(string)[string->length] = '\0';
+
+    return string;
+}
+
+var push_char_front(var string, char c){
+    assert(obj_is_str(string));
+
+    if (string->start == 0){
+        size_t new_capacity = string->capacity * 3u / 2u + 1u;
+        size_t new_start = new_capacity - string->capacity;
+
+        if (!obj_str_reserve(string, new_start, new_capacity)){
+            return NULL;
+        }
+    }
+
+    string->start--;
+    string->length++;
+    obj_cstr(string)[0] = c;
+
+    return string;
+}
+
+char pop_char(var string){
+    assert(obj_is_str(string));
+    assert(string->length > 0);
+
+    char c = obj_cstr(string)[--string->length];
+    obj_cstr(string)[string->length] = '\0';
+    return c;
+}
+
+char pop_char_front(var string){
+    string->length--;
+    return obj_cstr(string)[string->start++];
 }
 #include "dynamic.h"
 
@@ -247,12 +366,24 @@ int cmp_natural(const char *a, const char *b){
 }
 
 int obj_str_cmp(var object1, var object2){
-    return cmp_natural(object1->string, object2->string);
+    return cmp_natural(obj_cstr(object1), obj_cstr(object2));
 }
 
 int obj_num_cmp(var object1, var object2){
     if (object1->value < object2->value) return -1;
     if (object1->value > object2->value) return +1;
+    return 0;
+}
+
+int obj_dbl_cmp(var object1, var object2){
+    if (object1->dvalue < object2->dvalue) return -1;
+    if (object1->dvalue > object2->dvalue) return +1;
+    return 0;
+}
+
+int obj_bool_cmp(var object1, var object2){
+    if (object1->bvalue < object2->bvalue) return -1;
+    if (object1->bvalue > object2->bvalue) return +1;
     return 0;
 }
 
@@ -323,10 +454,10 @@ var find_consecutive(var string, bool (*is_wanted_char)(char c)){
     for (size_t i = 0; i < length;){
         begin_scope();
 
-        while (i < length && !is_wanted_char(string->string[i])) i++;
+        while (i < length && !is_wanted_char(obj_cstr(string)[i])) i++;
 
         size_t start = i;
-        while (i < length && is_wanted_char(string->string[i])) i++;
+        while (i < length && is_wanted_char(obj_cstr(string)[i])) i++;
 
         if (start != i){
             push(matches, substr(string, start, i));
@@ -398,11 +529,25 @@ size_t hash(var object){
 }
 
 size_t obj_num_hash(var object){
-    return (size_t)object->value;
+    num_type v = object->dvalue;
+    size_t h = 0;
+    memcpy(&h, &v, sizeof(h) < sizeof(v) ? sizeof(h) : sizeof(v));
+    return h;
+}
+
+size_t obj_dbl_hash(var object){
+    double v = object->dvalue;
+    size_t h = 0;
+    memcpy(&h, &v, sizeof(h) < sizeof(v) ? sizeof(h) : sizeof(v));
+    return h;
+}
+
+size_t obj_bool_hash(var object){
+    return object->bvalue ? 1 : 0;
 }
 
 size_t obj_str_hash(var object){
-    const char *string = object->string;
+    const char *string = obj_cstr(object);
     size_t length = object->length;
 
     // This would be the fnv1a32 hash if size_t was 32 bit.
@@ -454,6 +599,28 @@ void obj_num_json(var object, var output, size_t indentation){
     }
 }
 
+void obj_dbl_json(var object, var output, size_t indentation){
+    UNUSED(indentation);
+    assert(obj_is_dbl(object));
+    assert(obj_is_arr(output));
+
+    char buf[256];
+    // 20 digits should be enough
+    int length = snprintf(buf, sizeof(buf), "%1.20g", object->dvalue);
+    if (length >= 0){
+        var s = obj_str_from_length(buf, (size_t)length);
+        push(output, s);
+    }
+}
+
+void obj_bool_json(var object, var output, size_t indentation){
+    UNUSED(indentation);
+    assert(obj_is_bool(object));
+    assert(obj_is_arr(output));
+
+    push(output, str(object->bvalue ? "true" : "false"));
+}
+
 bool is_json_control_character(char c){
     switch (c){
         case '\\': return true;
@@ -483,30 +650,112 @@ char* json_escape(char *ptr, char c){
     return ptr;
 }
 
+static inline void obj_str_json_append_utf16(var s, uint16_t x){
+    push_char(s, '\\');
+    push_char(s, 'u');
+
+    for (int i = 12; i >= 0; i -= 4){
+        uint16_t nibble = (x >> i) & 0xf;
+        push_char(s, "0123456789abcdef"[nibble]);
+    }
+}
+
 void obj_str_json(var object, var output, size_t indentation){
     UNUSED(indentation);
     assert(obj_is_str(object));
     assert(obj_is_arr(output));
 
-    size_t length = 2;
+    // See https://www.rfc-editor.org/rfc/rfc4627#section-2.5 for escape chars.
 
-    // Count characters to escape
-    for (size_t i = 0; i < object->length; i++){
-        if (is_json_control_character(object->string[i])) length++;
-        length++;
+    size_t i = 0;
+    size_t n = object->length;
+    var escaped_string = str("\"");
+    unsigned char *values = (unsigned char*)obj_cstr(object);
+
+    while (i < n){
+        // Decode UTF-8
+        uint32_t a = values[i++], codepoint = 0;
+        if ((a >> 7) == 0){
+            codepoint = a;
+        }else if ((a >> 5) == (0x03 << 1)){
+            if (i + 1 > n){
+                fprintf(stderr, "Incomplete utf-8.\n");
+                return;
+            }
+            assert(i < n);
+            uint32_t b = values[i++];
+            codepoint = ((a & 0x1f) << 6) | (b & 0x3f);
+        }else if ((a >> 4) == (0x07 << 1)){
+            if (i + 2 > n){
+                fprintf(stderr, "Incomplete utf-8.\n");
+                return;
+            }
+            uint32_t b = values[i++];
+            uint32_t c = values[i++];
+            codepoint = ((a & 0x0f) << 12) | ((b & 0x3f) << 6) | (c & 0x3f);
+        }else if ((a >> 3) == (0x0f << 1)){
+            if (i + 3 > n){
+                fprintf(stderr, "Incomplete utf-8\n");
+                return;
+            }
+            uint32_t b = values[i++];
+            uint32_t c = values[i++];
+            uint32_t d = values[i++];
+            codepoint = ((a & 0x07) << 18) | ((b & 0x3f) << 12) | ((c & 0x3f) << 6) | (d & 0x3f);
+        }else{
+            // Codepoint out of bounds
+            fprintf(stderr, "Invalid utf-8\n");
+            return;
+        }
+
+        var s = escaped_string;
+
+        switch (codepoint){
+            // Short escape codes for special chars
+            case '\b': push_char(s, '\\'); push_char(s, 'b'); break;
+            case '\f': push_char(s, '\\'); push_char(s, 'f'); break;
+            case '\n': push_char(s, '\\'); push_char(s, 'n'); break;
+            case '\r': push_char(s, '\\'); push_char(s, 'r'); break;
+            case '\t': push_char(s, '\\'); push_char(s, 't'); break;
+            case '\"': push_char(s, '\\'); push_char(s, '\"'); break;
+            case '\\': push_char(s, '\\'); push_char(s, '\\'); break;
+
+            default:
+                // Escape small escape codes
+                if (codepoint <= 0x1f){
+                    obj_str_json_append_utf16(s, codepoint);
+                    break;
+                }
+
+                // Do not escape "readable" chars
+                if (codepoint <= 0x7f){
+                    unsigned char u = codepoint;
+                    push_char(s, *(char*)&u);
+                    break;
+                }
+
+                // Escape 16 bit chars
+                if (codepoint <= 0xffff){
+                    obj_str_json_append_utf16(s, codepoint);
+                    break;
+                }
+
+                // Escape surrogate pairs
+                if (codepoint <= 0x10ffff){
+                    uint32_t x = codepoint - 0x10000;
+                    uint16_t hi = (x >> 10) | 0xd800;
+                    uint16_t lo = (x & 0x3ff) | 0xdc00;
+                    obj_str_json_append_utf16(s, hi);
+                    obj_str_json_append_utf16(s, lo);
+                    break;
+                }
+
+                return;
+        }
     }
 
-    char *string = malloc(length + 1u);
-
-    // Build string with leading/trailing/escaped double quotes
-    char *ptr = string;
-    *ptr++ = '"';
-    for (size_t i = 0; i < object->length; i++){
-        ptr = json_escape(ptr, object->string[i]);
-    }
-    *ptr++ = '"';
-    *ptr++ = '\0';
-    push(output, obj_str_take_ownership(string, length));
+    push_char(escaped_string, '\"');
+    push(output, escaped_string);
 }
 
 void obj_map_json(var object, var output, size_t indentation){
@@ -563,6 +812,425 @@ var json(var object){
     return join(array, str(""));
 }
 
+typedef struct CharStream CharStream;
+
+struct CharStream {
+    const char *string;
+    size_t length;
+    size_t pos;
+    var error;
+};
+
+var parse_json_stream(CharStream *stream);
+
+static inline size_t cstream_available(CharStream *stream){
+    return stream->length - stream->pos;
+}
+
+static inline char cstream_peek_offset(CharStream *stream, size_t offset){
+    return cstream_available(stream) > offset ?
+        stream->string[stream->pos + offset] : '\0';
+}
+
+static inline char cstream_peek(CharStream *stream){
+    return cstream_peek_offset(stream, 0);
+}
+
+bool consume_word(CharStream *stream, const char *word){
+    size_t offset;
+    for (offset = 0; *word; offset++){
+        if (cstream_peek_offset(stream, offset) != *word) return false;
+    }
+    stream->pos += offset;
+    return true;
+}
+
+void skip_whitespace(CharStream *stream){
+    while (is_space(cstream_peek(stream))){
+        stream->pos++;
+    }
+}
+
+static inline char consume(CharStream *stream){
+    assert(cstream_available(stream));
+    return stream->string[stream->pos++];
+}
+
+static inline bool has_fraction_part(CharStream *stream){
+    return cstream_peek(stream) == '.' &&
+        is_digit(cstream_peek_offset(stream, 1));
+}
+
+static inline bool has_exponent_part(CharStream *stream){
+    // [eE][+-]?[0-9]
+    char first_char = cstream_peek(stream);
+
+    if (first_char != 'e' && first_char != 'E') return false;
+
+    char second_char = cstream_peek_offset(stream, 1);
+
+    if (is_digit(second_char)) return true;
+
+    if (second_char != '+' && second_char != '-') return false;
+
+    return is_digit(cstream_peek_offset(stream, 2));
+}
+
+var parse_json_number(CharStream *stream){
+    char number[256 + 1];
+    size_t n = 0;
+    const size_t n_max = sizeof(number) - 1;
+
+    if (cstream_peek(stream) == '-'){
+        number[n++] = consume(stream);
+    }
+
+    // There must be at least one digit.
+    // JSON standard does not allow ".123".
+    if (!is_digit(cstream_peek(stream))) return NULL;
+
+    number[n++] = consume(stream);
+
+    // Check for leading zeros (JSON standard does not allow them).
+    if (number[n - 1] == '0' && is_digit(cstream_peek(stream))){
+        return NULL;
+    }
+
+    while (is_digit(cstream_peek(stream))){
+        if (n >= n_max) return NULL;
+        number[n++] = consume(stream);
+    }
+
+    bool is_floating_point = false;
+
+    // parse fractional part, for example .123
+    if (has_fraction_part(stream)){
+        is_floating_point = true;
+        if (n >= n_max) return NULL;
+        number[n++] = consume(stream);
+        if (n >= n_max) return NULL;
+        number[n++] = consume(stream);
+        while (is_digit(cstream_peek(stream))){
+            if (n >= n_max) return NULL;
+            number[n++] = consume(stream);
+        }
+    }
+
+    // parse exponent part, for example [eE][+-]?[0-9]
+    if (has_exponent_part(stream)){
+        is_floating_point = true;
+        if (n >= n_max) return NULL;
+        number[n++] = consume(stream);
+        if (n >= n_max) return NULL;
+        number[n++] = consume(stream);
+        while (is_digit(cstream_peek(stream))){
+            if (n >= n_max) return NULL;
+            number[n++] = consume(stream);
+        }
+    }
+
+    number[n] = '\0';
+
+    if (is_floating_point){
+        char *endptr = NULL;
+        // TODO check over/underflow
+        double value = strtod(number, &endptr);
+        return endptr == number + n ? dbl(value) : NULL;
+    }else{
+        char *endptr = NULL;
+        // TODO check over/underflow
+        long long value = strtoll(number, &endptr, 10);
+        return endptr == number + n ? num(value) : NULL;
+    }
+}
+
+var parse_json_array(CharStream *stream){
+    var array = arr0();
+    consume(stream);
+    while (1){
+        skip_whitespace(stream);
+
+        if (!cstream_available(stream)) return NULL;
+
+        if (cstream_peek(stream) == ']'){
+            consume(stream);
+            return array;
+        }
+
+        var object = parse_json_stream(stream);
+
+        push(array, object);
+
+        skip_whitespace(stream);
+
+        if (cstream_peek(stream) == ','){
+            consume(stream);
+        }else if (cstream_peek(stream) != ']'){
+            return NULL;
+        }
+    }
+}
+
+var parse_json_map(CharStream *stream){
+    var m = map();
+    consume(stream);
+    while (1){
+        skip_whitespace(stream);
+
+        if (!cstream_available(stream)) return NULL;
+
+        if (cstream_peek(stream) == '}'){
+            consume(stream);
+            return m;
+        }
+
+        var key = parse_json_stream(stream);
+
+        // JSON only allows string keys :(
+        if (!obj_is_str(key)) return NULL;
+
+        skip_whitespace(stream);
+
+        if (cstream_peek(stream) != ':') return NULL;
+
+        consume(stream);
+
+        skip_whitespace(stream);
+
+        var value = parse_json_stream(stream);
+
+        // TODO what about duplicate keys?
+        map_put(m, key, value);
+
+        skip_whitespace(stream);
+
+        if (cstream_peek(stream) == ','){
+            consume(stream);
+        }else if (cstream_peek(stream) != '}'){
+            return NULL;
+        }
+    }
+}
+
+int char2int(char c){
+    switch (c){
+        case '0': return 0;
+        case '1': return 1;
+        case '2': return 2;
+        case '3': return 3;
+        case '4': return 4;
+        case '5': return 5;
+        case '6': return 6;
+        case '7': return 7;
+        case '8': return 8;
+        case '9': return 9;
+
+        case 'a': return 10;
+        case 'b': return 11;
+        case 'c': return 12;
+        case 'd': return 13;
+        case 'e': return 14;
+        case 'f': return 15;
+
+        case 'A': return 10;
+        case 'B': return 11;
+        case 'C': return 12;
+        case 'D': return 13;
+        case 'E': return 14;
+        case 'F': return 15;
+
+        default: return -1;
+    }
+}
+
+int codepoint2utf8(uint32_t codepoint, uint8_t *ptr){
+    assert(codepoint <= 0x1fffff);
+
+    if (codepoint <= 0x7f){
+        *ptr++ = codepoint;
+        return 1;
+    }else if (codepoint <= 0x7ff){
+        *ptr++ = (0x03 << 6) | ((codepoint >> 1 * 6) & 0x1f);
+        *ptr++ = (0x01 << 7) | ((codepoint >> 0 * 6) & 0x3f);
+        return 2;
+    }else if (codepoint <= 0x00ffff){
+        *ptr++ = (0x07 << 5) | ((codepoint >> 2 * 6) & 0x0f);
+        *ptr++ = (0x01 << 7) | ((codepoint >> 1 * 6) & 0x3f);
+        *ptr++ = (0x01 << 7) | ((codepoint >> 0 * 6) & 0x3f);
+        return 3;
+    }else if (codepoint <= 0x1fffff){
+        *ptr++ = (0x0f << 4) | ((codepoint >> 3 * 6) & 0x07);
+        *ptr++ = (0x01 << 7) | ((codepoint >> 2 * 6) & 0x3f);
+        *ptr++ = (0x01 << 7) | ((codepoint >> 1 * 6) & 0x3f);
+        *ptr++ = (0x01 << 7) | ((codepoint >> 0 * 6) & 0x3f);
+        return 4;
+    }
+    return -1;
+}
+
+var parse_json_str(CharStream *stream){
+    var string = str("");
+
+    consume(stream);
+
+    while (1){
+        if (!cstream_available(stream)) goto premature_end;
+
+        if (cstream_peek(stream) == '"'){
+            consume(stream);
+            return string;
+        }
+
+        char c = consume(stream);
+
+        if (c == '\\'){
+            if (!cstream_available(stream)) goto premature_end;
+
+            c = cstream_peek(stream);
+
+            switch (c){
+                case '\\': break;
+                case '\"': break;
+                case '/': break;
+                case 'b': c = '\b'; break;
+                case 'f': c = '\f'; break;
+                case 'n': c = '\n'; break;
+                case 'r': c = '\r'; break;
+                case 't': c = '\t'; break;
+                case 'u':{
+                    if (cstream_available(stream) < 5) goto premature_end;
+                    consume(stream);
+
+                    uint32_t codepoint = 0;
+
+                    for (int i = 0; i < 2; i++){
+                        for (int j = 0; j < 4; j++){
+                            if (!cstream_available(stream)) goto premature_end;
+                            int nibble = char2int(consume(stream));
+                            if (nibble == -1) goto invalid_escape;
+                            codepoint <<= 4;
+                            codepoint |= nibble;
+                        }
+
+                        if (codepoint < 0xd800 || 0xdfff < codepoint) break;
+
+                        if (cstream_peek(stream) != '\\') goto invalid_escape;
+                        consume(stream);
+
+                        if (cstream_peek(stream) != 'u') goto invalid_escape;
+                        consume(stream);
+                    }
+
+                    if (codepoint > 0xffff){
+                        uint32_t hi = codepoint >> 16;
+                        uint32_t lo = codepoint & 0xffff;
+
+                        if ((hi & (0x3f << 10)) != 0xd800) goto invalid_escape;
+                        if ((lo & (0x3f << 10)) != 0xdc00) goto invalid_escape;
+
+                        codepoint = ((hi & 0x3ff) << 10) | (lo & 0x3ff);
+                        codepoint += 0x10000;
+                    }
+
+                    uint8_t utf8[4];
+                    int n = codepoint2utf8(codepoint, utf8);
+
+                    if (n == -1) goto invalid_escape;
+
+                    for (int i = 0; i < n; i++){
+                        push_char(string, *(char*)&utf8[i]);
+                    }
+
+                    continue;
+                }
+
+                default: goto invalid_escape;
+            }
+
+            consume(stream);
+            push_char(string, c);
+        }else{
+            // TODO reject <= 0x20 or > 0x7f?
+            push_char(string, c);
+        }
+    }
+
+premature_end:
+    stream->error = str("Premature end of stream while parsing string");
+    return NULL;
+invalid_escape:
+    stream->error = str("Invalid escape code");
+    return NULL;
+}
+
+var parse_json_stream(CharStream *stream){
+    // TODO parse with a heap-allocated stack to avoid stack overflow for deeply nested objects
+    skip_whitespace(stream);
+
+    // Premature end of stream
+    if (!cstream_available(stream)) return NULL;
+
+    char c = cstream_peek(stream);
+
+    if (is_digit(c) || c == '-'){
+        return parse_json_number(stream);
+    }else if (c == '['){
+        return parse_json_array(stream);
+    }else if (c == '"'){
+        return parse_json_str(stream);
+    }else if (c == '{'){
+        return parse_json_map(stream);
+    }else if (consume_word(stream, "null")){
+        return NULL;
+    }else if (consume_word(stream, "true")){
+        return obj_bool(true);
+    }else if (consume_word(stream, "false")){
+        return obj_bool(false);
+    }else{
+        if (!stream->error){
+            stream->error = str("Unexpected character while parsing new object");
+        }
+        return NULL;
+    }
+}
+
+var parse_json_stream_strict(CharStream *stream){
+    var object = parse_json_stream(stream);
+
+    if (stream->error){
+        println("ERROR: Could not parse JSON.", stream->error);
+    }
+
+    // Has the entire stream been parsed, or is there something left over?
+    if (stream->pos != stream->length){
+        println("ERROR: Could not parse JSON completely.");
+    }
+
+    return object;
+}
+
+var parse_cstr_length(const char *string, size_t length){
+    CharStream stream[1] = {{string, length, 0, NULL}};
+    return parse_json_stream_strict(stream);
+}
+
+var parse_cstr(const char *string){
+    return parse_cstr_length(string, strlen(string));
+}
+
+var parse_str(var string){
+    return parse_cstr_length(obj_cstr(string), string->length);
+}
+
+var parse(void *ptr){
+    fprintf(stderr, "TODO: Error handling for parse function.\n");
+    fprintf(stderr, "TODO: Handle integer/double overflow.\n");
+    if (is_object(ptr)){
+        return parse_str(ptr);
+    }else{
+        return parse_cstr(ptr);
+    }
+}
 #include "dynamic.h"
 
 TypeInfo num_type_info = {
@@ -952,7 +1620,7 @@ void obj_map_mark(var object){
 
 var read_file(var path){
     assert(obj_is_str(path));
-    FILE *f = fopen(path->string, "rb");
+    FILE *f = fopen(obj_cstr(path), "rb");
     if (!f) return NULL;
     fseek(f, 0, SEEK_END);
     long llength = ftell(f);
@@ -980,9 +1648,9 @@ var read_file(var path){
 bool write_file(var path, var data){
     assert(obj_is_str(path));
     assert(obj_is_str(data));
-    FILE *f = fopen(path->string, "wb");
+    FILE *f = fopen(obj_cstr(path), "wb");
     if (!f) return false;
-    if (data->length != fwrite(data->string, 1, data->length, f)){
+    if (data->length != fwrite(obj_cstr(data), 1, data->length, f)){
         fclose(f);
         return false;
     }
@@ -1028,7 +1696,7 @@ void obj_arr_free(Object *object){
 
 var obj_arr_reserve(var array, size_t start, size_t capacity){
     if (array->capacity < capacity){
-        assert(start + array->length < capacity);
+        assert(start + array->length <= capacity);
 
         // TODO check overflow
         var *objects = malloc(sizeof(*objects) * capacity);

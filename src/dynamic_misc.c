@@ -27,10 +27,10 @@ var find_consecutive(var string, bool (*is_wanted_char)(char c)){
     for (size_t i = 0; i < length;){
         begin_scope();
 
-        while (i < length && !is_wanted_char(string->string[i])) i++;
+        while (i < length && !is_wanted_char(obj_cstr(string)[i])) i++;
 
         size_t start = i;
-        while (i < length && is_wanted_char(string->string[i])) i++;
+        while (i < length && is_wanted_char(obj_cstr(string)[i])) i++;
 
         if (start != i){
             push(matches, substr(string, start, i));
