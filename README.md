@@ -1,21 +1,14 @@
-#### Want to write C99 compatible C code that looks vaguely like Python?
-#### Want to have Python-like glacial performance but don't want to miss C's foot guns?
-#### Do you want a garbage collector that simply invalidates your objects if you are not careful?
-#### Is 2^-128 an acceptable error rate for type checking to you?
-#### Do you want a scripting language so fast that it is already done before your average interpreter has even started?
-### Do you want to push to the front of your arrays in O(1)?
-### Do you think that insertion order is the only true iteration order for hash maps?
-## Do you want to gloat over lesser programming languages without `lpad` function?
-# Does your life feel empty without segfaults?
-# Then this is for you!
+The `dynamic` library turns C into a more dynamic language. It supports:
 
-#### Installation
-
-Include `dynamic.h` and `dynamic.c` into your project and you, too, can live in this magical Christmas land that is dynamic C!
+* Dynamic values, which can be strings (`str`), hashmaps (`map`), arrays (`arr`), integers (`num`) or double precision floating point numbers (`dbl`)
+* Garbage collector
+* Arrays (`arr`) with both efficient $O(1)$ appending (`push`) and prepending (`push_front`)
+* JSON reading and writing
+* `println` function that can print dynamic values
 
 #### Example
 
-Here is an example program to find the 5 most frequently occuring words in a document.
+Here is a valid C99 program to find the 5 most frequently occuring words in a document.
 
 For more examples, refer to [tests/](https://github.com/99991/dynamic/tree/main/tests).
 
@@ -32,6 +25,7 @@ var count(var words){
     foreach(i, word, words)
         var n = map_get_default(counts, word, num(0));
 
+        // The int value of the dynamic object `n` can be accessed with `->value`.
         n->value++;
 
         map_put(counts, word, n);
@@ -94,19 +88,23 @@ Concatenate your C files and pipe them into [Fabrice Bellard's awesome Tiny C Co
 cat dynamic.c example.c | tcc -run -
 ```
 
-`tcc` will be finished before CPython has even started!
+`tcc` will be finished executing this program before an interpreter like CPython has even started.
 
 #### Notes
 
-- Lol no generics (this isn't Go or C11)
 - `var` is just a `typedef` for `Object*`
 - `Object` is a struct that is either an array (`arr`), string (`str`), integer (`num`) or hash map (`map`) depending on which function it was initialized with.
-- `println` accepts a variable number of arguments of type `Object*` or char pointers. How does that even work?
+- `println` accepts a variable number of arguments of type `Object*` or char pointers. It works like this:
     - All objects start with 16 magic bytes and a null terminator. This information can be used to [tell them apart from strings](https://github.com/99991/dynamic/blob/a423a04061ee44bad0720fbd29f2321cc276564a/src/dynamic_gc.c#L21).
-    - [This fancy macro](https://github.com/99991/dynamic/blob/a423a04061ee44bad0720fbd29f2321cc276564a/dynamic.h#L17) is used to count the number of arguments so you do not have to count them and pass them to the function yourself like some caveman.
+    - [This fancy macro](https://github.com/99991/dynamic/blob/a423a04061ee44bad0720fbd29f2321cc276564a/dynamic.h#L17) is used to count the number of arguments to enable functions with multiple parameters.
 
 #### Disclaimer
 
-This project is obviously satire and probably full of bugs, but my vacation is almost over, so this won't see any further work for a while.
+This project was a fun vacation project, but it will probably not receive updates anytime soon. It has not been tested extensively, so be prepared for bugs!
 
-You are probably better served with a programming language like [Nim](https://nim-lang.org/).
+#### Related
+
+If you like this library, you may also like:
+
+* [The Cello High Level C library](https://libcello.org/)
+* [The Nim Programming Language](https://nim-lang.org/)
